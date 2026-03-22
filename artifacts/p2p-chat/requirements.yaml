@@ -1,0 +1,14 @@
+packages:
+  "framer-motion": "For smooth layout transitions and panel sliding animations"
+  "date-fns": "For precise timestamp formatting in the protocol inspector and chat"
+  "clsx": "For conditional tailwind class merging"
+  "tailwind-merge": "For conditional tailwind class merging"
+  "uuid": "For generating unique local message IDs"
+
+images: []
+
+notes:
+  - "The app uses a dark 'hacker/technical' theme with custom neon color variables."
+  - "WebSockets connect to ws:// or wss:// on the current host at /ws."
+  - "React Query hooks are imported from @workspace/api-client-react."
+  - "Local state handles real-time WS chat events, merging with history from REST hooks."

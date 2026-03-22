@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: P2P Local Network Chat API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: chat
+    description: Chat operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /chat/rooms:
+    get:
+      operationId: getRooms
+      tags: [chat]
+      summary: Get all chat rooms
+      responses:
+        "200":
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+    post:
+      operationId: createRoom
+      tags: [chat]
+      summary: Create a new chat room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomRequest"
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+  /chat/rooms/{roomId}/messages:
+    get:
+      operationId: getMessages
+      tags: [chat]
+      summary: Get messages for a room
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+  /chat/peers:
+    get:
+      operationId: getPeers
+      tags: [chat]
+      summary: Get connected peers
+      responses:
+        "200":
+          description: List of connected peers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Peer"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    Room:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+        peerCount:
+          type: number
+      required:
+        - id
+        - name
+        - createdAt
+        - peerCount
+    CreateRoomRequest:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: string
+        senderIp:
+          type: string
+        content:
+          type: string
+        timestamp:
+          type: string
+        protocol:
+          type: string
+        frameType:
+          type: string
+        payloadSize:
+          type: number
+        direction:
+          type: string
+      required:
+        - id
+        - roomId
+        - senderId
+        - senderName
+        - senderIp
+        - content
+        - timestamp
+        - protocol
+        - frameType
+        - payloadSize
+        - direction
+    Peer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        ip:
+          type: string
+        connectedAt:
+          type: string
+        roomId:
+          type: string
+      required:
+        - id
+        - name
+        - ip
+        - connectedAt
+        - roomId

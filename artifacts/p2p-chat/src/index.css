@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: 'Space Grotesk', sans-serif;
+  --font-mono: 'Fira Code', monospace;
+
+  /* Hacker / Terminal theme */
+  --color-background:         hsl(240 12% 3.5%);
+  --color-foreground:         hsl(0 0% 94%);
+
+  --color-card:               hsl(240 10% 6.5%);
+  --color-card-foreground:    hsl(0 0% 94%);
+
+  --color-popover:            hsl(240 10% 7%);
+  --color-popover-foreground: hsl(0 0% 94%);
+
+  --color-primary:            hsl(144 100% 48%); /* Neon green */
+  --color-primary-foreground: hsl(240 12% 4%);
+
+  --color-secondary:          hsl(240 10% 11%);
+  --color-secondary-foreground: hsl(0 0% 88%);
+
+  --color-muted:              hsl(240 10% 11%);
+  --color-muted-foreground:   hsl(240 5% 58%);
+
+  --color-accent:             hsl(163 100% 46%); /* Neon cyan */
+  --color-accent-foreground:  hsl(240 12% 4%);
+
+  --color-destructive:        hsl(348 100% 52%); /* Neon red */
+  --color-destructive-foreground: hsl(0 0% 94%);
+
+  --color-border:             hsl(240 10% 15%);
+  --color-input:              hsl(240 10% 15%);
+  --color-ring:               hsl(144 100% 48%);
+
+  --radius-sm:  0.25rem;
+  --radius-md:  0.375rem;
+  --radius-lg:  0.5rem;
+  --radius-xl:  0.75rem;
+}
+
+@layer base {
+  :root {
+    --background:         240 12% 3.5%;
+    --foreground:         0 0% 94%;
+    --card:               240 10% 6.5%;
+    --card-foreground:    0 0% 94%;
+    --popover:            240 10% 7%;
+    --popover-foreground: 0 0% 94%;
+    --primary:            144 100% 48%;
+    --primary-foreground: 240 12% 4%;
+    --secondary:          240 10% 11%;
+    --secondary-foreground: 0 0% 88%;
+    --muted:              240 10% 11%;
+    --muted-foreground:   240 5% 58%;
+    --accent:             163 100% 46%;
+    --accent-foreground:  240 12% 4%;
+    --destructive:        348 100% 52%;
+    --destructive-foreground: 0 0% 94%;
+    --border:             240 10% 15%;
+    --input:              240 10% 15%;
+    --ring:               144 100% 48%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground overflow-hidden;
+    selection-color: hsl(var(--primary));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  /* CRT scanline effect */
+  .scanlines {
+    position: relative;
+  }
+  .scanlines::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.18) 50%),
+      linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.04));
+    background-size: 100% 3px, 3px 100%;
+    z-index: 50;
+    pointer-events: none;
+  }
+
+  /* Subtle dot-grid background */
+  .dot-grid {
+    background-image: radial-gradient(
+      circle,
+      hsl(var(--border) / 0.8) 1px,
+      transparent 1px
+    );
+    background-size: 24px 24px;
+  }
+
+  /* Glow utilities */
+  .glow-primary {
+    box-shadow:
+      0 0 20px hsl(var(--primary) / 0.18),
+      0 0 6px hsl(var(--primary) / 0.12),
+      inset 0 0 16px hsl(var(--primary) / 0.06);
+  }
+  .glow-accent {
+    box-shadow:
+      0 0 20px hsl(var(--accent) / 0.18),
+      0 0 6px hsl(var(--accent) / 0.12),
+      inset 0 0 16px hsl(var(--accent) / 0.06);
+  }
+  .glow-destructive {
+    box-shadow:
+      0 0 20px hsl(var(--destructive) / 0.18),
+      0 0 6px hsl(var(--destructive) / 0.12),
+      inset 0 0 16px hsl(var(--destructive) / 0.06);
+  }
+
+  /* Scrollbar */
+  .scrollbar-custom::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .scrollbar-custom::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Terminal cursor blink */
+  @keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+  .cursor-blink {
+    animation: cursor-blink 1s step-end infinite;
+  }
+
+  /* Message slide-in */
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg-in {
+    animation: msg-in 0.18s ease-out forwards;
+  }
+}

@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+out-tsc/
+build/
+coverage/
+
+# tools
+.DS_Store
+Thumbs.db
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+*.log
+
+# environnement
+.env
+.env.local
+.env.*.local
+
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Replit/project artifacts (optional)
+.cache/
+.local/
+
+# others
+.idea/
+*.swp
