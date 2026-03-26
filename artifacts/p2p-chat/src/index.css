@@ -148,6 +148,13 @@
     animation: cursor-blink 1s step-end infinite;
   }
 
+  /* Touch-friendly targets: min 44x44px on mobile */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    @apply flex items-center justify-center;
+  }
+
   /* Message slide-in */
   @keyframes msg-in {
     from { opacity: 0; transform: translateY(6px); }
