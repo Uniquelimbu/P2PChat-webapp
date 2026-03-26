@@ -218,21 +218,31 @@ All endpoints are mounted under `/api`.
 
 ### Prerequisites
 
-You need three things installed before you start.
+You need these tools installed before you start.
 
-#### 1. Node.js (v20 or later)
+#### 1. Git
 
 ```bash
-# Check if you already have it
-node --version
-# Should print v20.x.x or higher
+# Check
+git --version
 
-# If not installed, download from: https://nodejs.org
-# Or use nvm (Node Version Manager):
-nvm install 20 && nvm use 20
+# If missing
+# Download: https://git-scm.com/downloads
 ```
 
-#### 2. pnpm (v9 or later)
+#### 2. Node.js (v22.12+ recommended)
+
+```bash
+# Check
+node --version
+# Recommended: v22.12 or higher
+
+# If missing, install from: https://nodejs.org
+# Optional (nvm):
+# nvm install 22 && nvm use 22
+```
+
+#### 3. pnpm (v9 or later)
 
 This project uses **pnpm**, not npm or yarn. Using the wrong package manager will not work.
 
@@ -241,10 +251,10 @@ This project uses **pnpm**, not npm or yarn. Using the wrong package manager wil
 npm install -g pnpm
 
 # Verify
-pnpm --version   # Should print 9.x.x or higher
+pnpm --version
 ```
 
-#### 3. PostgreSQL (v14 or later)
+#### 4. PostgreSQL (v14 or later)
 
 ```bash
 # macOS (Homebrew)
@@ -261,6 +271,24 @@ sudo systemctl start postgresql
 
 # Verify PostgreSQL is running
 psql --version
+```
+
+#### 5. ngrok (optional, for sharing publicly)
+
+Use this only if you want to share your local demo link with classmates outside your machine.
+
+```bash
+# Windows
+winget install --id Ngrok.Ngrok --source winget
+
+# macOS
+brew install ngrok/ngrok/ngrok
+
+# Linux (snap)
+snap install ngrok
+
+# Verify
+ngrok version
 ```
 
 ---
@@ -288,7 +316,7 @@ You should see output like `Done in 30s`. If you see an error saying "use pnpm i
 
 ### Step 3 — Set Up the PostgreSQL Database
 
-#### 3a. Create a database and user
+#### 3a. Create a database and user (or reuse existing postgres user)
 
 Open a PostgreSQL shell:
 
@@ -312,6 +340,8 @@ CREATE DATABASE p2pchat OWNER p2pchat;
 \q
 ```
 
+If you prefer, you can skip user creation and use `postgres` directly in `DATABASE_URL`.
+
 #### 3b. Create your environment file
 
 Create a file named `.env` in the project root:
@@ -330,6 +360,12 @@ Open `.env` in any text editor and add this line (replace the values if you chos
 DATABASE_URL=postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat
 ```
 
+Example if your Postgres runs on a non-default port (for example `5433`):
+
+```env
+DATABASE_URL=postgresql://postgres:your_password@localhost:5433/p2pchat
+```
+
 ---
 
 ### Step 4 — Create the Database Tables
@@ -337,10 +373,15 @@ DATABASE_URL=postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat
 This command reads your schema and creates the `rooms` and `messages` tables:
 
 ```bash
+# macOS / Linux
+DATABASE_URL="postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat" pnpm --filter @workspace/db run push
+
+# Windows PowerShell
+$env:DATABASE_URL="postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat"
 pnpm --filter @workspace/db run push
 ```
 
-You should see `Changes applied` at the end. If you see a connection error, double-check your `DATABASE_URL` in `.env`.
+You should see `Changes applied` at the end. If you see a connection error, double-check `DATABASE_URL`, username/password, host, and port.
 
 ---
 
@@ -361,89 +402,88 @@ ON CONFLICT DO NOTHING;
 > Replace `$DATABASE_URL` with your actual connection string if your shell doesn't read `.env` automatically, e.g.:  
 > `psql postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat -c "..."`
 
----
+Windows PowerShell example:
 
-### Step 6 — Configure the Vite Proxy
-
-The frontend needs to know where the backend is running so it can forward API and WebSocket requests.
-
-Open `artifacts/p2p-chat/vite.config.ts` and add a `proxy` block inside the `server` section:
-
-```typescript
-server: {
-  port,
-  host: "0.0.0.0",
-  allowedHosts: true,
-  // ADD THIS BLOCK:
-  proxy: {
-    "/api": {
-      target: "http://localhost:8080",
-      changeOrigin: true,
-    },
-    "/ws": {
-      target: "ws://localhost:8080",
-      ws: true,
-    },
-  },
-  // END OF ADDED BLOCK
-},
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" "postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat" -c "INSERT INTO rooms (id, name, created_at) VALUES ('general','General',NOW()),('demo','Demo Room',NOW()) ON CONFLICT DO NOTHING;"
 ```
 
 ---
 
-### Step 7 — Start the Backend
+### Step 6 — Start Everything With One Command
 
-Open a **new terminal window** and run:
+From the project root:
 
 ```bash
-PORT=8080 pnpm --filter @workspace/api-server run dev
+pnpm run dev:all
 ```
 
-You should see:
+This script starts:
 
-```
-[INFO]: WebSocket server initialized on /ws
-[INFO]: Server listening with WebSocket support  port: 8080
-```
+- API server on `http://localhost:8080`
+- Frontend on `http://localhost:5173`
 
-Leave this terminal running.
+The script already sets `PORT` and `BASE_PATH` for you.
 
 ---
 
-### Step 8 — Start the Frontend
-
-Open **another new terminal window** and run:
-
-```bash
-PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev
-```
-
-You should see:
-
-```
-VITE v7.x.x  ready in 350ms
-➜  Local:   http://localhost:5173/
-➜  Network: http://192.168.x.x:5173/
-```
-
----
-
-### Step 9 — Open the App
+### Step 7 — Open the App
 
 Open your browser and go to: **[http://localhost:5173](http://localhost:5173)**
 
-You'll see the **SECURE TERMINAL ACCESS** setup screen. Enter an alias (at least 2 characters) and click **INITIALIZE_CONNECTION**.
+---
+
+### Step 8 — Test With Multiple Users
+
+- Open two or more browser tabs and join with different aliases.
+- Send messages and check the Protocol Inspector.
+- Confirm peer list updates in real time.
 
 ---
 
-### Step 10 — Test With Multiple Users
+### Step 9 — Share Publicly With ngrok (Class Demo)
 
-To simulate a real P2P chat:
+If you want to share your local app link externally:
 
-- Open **two or more browser tabs** (or use different browsers) and go to the same URL.
-- Enter a different alias in each tab.
-- Watch the peer list update in real time as each connection joins.
-- Send messages and watch the **Protocol Inspector** panel at the bottom to see the raw WebSocket frames.
+1. Create a free ngrok account: https://dashboard.ngrok.com/signup
+2. Copy your authtoken: https://dashboard.ngrok.com/get-started/your-authtoken
+3. Run once:
+
+```bash
+ngrok config add-authtoken YOUR_TOKEN_HERE
+```
+
+4. In a second terminal (keep app running), run:
+
+```bash
+pnpm run share:ngrok
+```
+
+5. ngrok prints a URL like:
+
+```text
+https://something.ngrok-free.app
+```
+
+Share that URL with your class.
+
+Important:
+
+- Keep both terminals open during the demo.
+- Free ngrok URLs change every time you restart ngrok.
+- If `ngrok` command is not found right after install, open a new terminal and try again.
+
+---
+
+### Step 10 — Optional: Manual Two-Terminal Run (without `dev:all`)
+
+```bash
+# Terminal 1
+PORT=8080 pnpm --filter @workspace/api-server run dev
+
+# Terminal 2
+PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev
+```
 
 ---
 
@@ -502,6 +542,8 @@ Run all commands from the **project root** unless otherwise noted.
 | Command | What it does |
 |---|---|
 | `pnpm install` | Install all workspace dependencies |
+| `pnpm run dev:all` | Start backend + frontend together with required env vars |
+| `pnpm run share:ngrok` | Start an ngrok tunnel to port 5173 |
 | `pnpm run typecheck` | Type-check the entire monorepo with TypeScript project references |
 | `pnpm run build` | Typecheck then build all packages |
 | `pnpm --filter @workspace/db run push` | Apply schema changes to PostgreSQL |
@@ -520,18 +562,19 @@ Already done it before? Here's the whole thing in one block:
 # Clone and install
 git clone https://github.com/your-username/p2p-local-network-chat.git
 cd p2p-local-network-chat
+npm install -g pnpm
 pnpm install
 
 # Set up database (one time)
 echo "DATABASE_URL=postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat" > .env
-pnpm --filter @workspace/db run push
+DATABASE_URL="postgresql://p2pchat:p2pchat_pass@localhost:5432/p2pchat" pnpm --filter @workspace/db run push
 psql "$DATABASE_URL" -c "INSERT INTO rooms (id,name,created_at) VALUES ('general','General',NOW()),('demo','Demo Room',NOW()) ON CONFLICT DO NOTHING;"
 
-# Terminal 1 — backend
-PORT=8080 pnpm --filter @workspace/api-server run dev
+# Start app (one command)
+pnpm run dev:all
 
-# Terminal 2 — frontend (after adding proxy to vite.config.ts)
-PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev
+# Optional public share (second terminal)
+pnpm run share:ngrok
 
 # Open http://localhost:5173
 ```
@@ -542,12 +585,10 @@ PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev
 
 ### `PORT environment variable is required`
 
-You forgot to prefix the command with `PORT=...`. Every service reads `PORT` from the environment.
+Use `pnpm run dev:all` so required env vars are set automatically.
 
 ```bash
-# Correct
-PORT=8080 pnpm --filter @workspace/api-server run dev
-PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev
+pnpm run dev:all
 ```
 
 ### `Error: connect ECONNREFUSED 127.0.0.1:5432`
@@ -577,11 +618,35 @@ Check that the Vite proxy is configured (Step 6) and that the backend is running
 ### Port already in use
 
 ```bash
-# Find what's using the port
+# Windows (PowerShell): stop listeners on 8080 and 5173
+$ports = 5173,8080
+Get-NetTCPConnection -LocalPort $ports -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty OwningProcess -Unique |
+  ForEach-Object { Stop-Process -Id $_ -Force }
+
+# macOS/Linux: find + kill
 lsof -i :8080   # or :5173
 
 # Kill it
 kill -9 <PID>
+```
+
+### ngrok auth error (`ERR_NGROK_4018`)
+
+Your account token is not configured yet.
+
+```bash
+ngrok config add-authtoken YOUR_TOKEN_HERE
+pnpm run share:ngrok
+```
+
+### ngrok version too old (`ERR_NGROK_121`)
+
+Update ngrok, then restart tunnel:
+
+```bash
+ngrok update
+pnpm run share:ngrok
 ```
 
 ### Users on other devices can't connect
