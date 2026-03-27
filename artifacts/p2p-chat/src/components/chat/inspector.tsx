@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "@/context/app-context";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { formatBytes, cn } from "@/lib/utils";
 import {
   Terminal, Trash2, Pause, Play, ArrowDown, ArrowUp,
-  Activity, ChevronDown, ChevronRight, Plug, PlugZap, Wifi,
+  Activity, ChevronDown, ChevronRight, Plug, PlugZap, Wifi, X,
 } from "lucide-react";
 import type { ProtocolLog } from "@/context/app-context";
 
@@ -177,9 +178,11 @@ function LogEntry({ log }: { log: ProtocolLog }) {
 }
 
 export function ProtocolInspector() {
-  const { logs, isInspectorOpen, clearLogs, isLogsPaused, setIsLogsPaused } = useApp();
+  const { logs, isInspectorOpen, setIsInspectorOpen, clearLogs, isLogsPaused, setIsLogsPaused } = useApp();
+  const isMobile = useIsMobile();
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inspectorWidth = isMobile ? "calc(100vw - 16px)" : 384;
 
   // Auto-scroll when new logs arrive and not paused
   useEffect(() => {
@@ -191,13 +194,27 @@ export function ProtocolInspector() {
   return (
     <AnimatePresence>
       {isInspectorOpen && (
-        <motion.div
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 384, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="h-full flex-shrink-0 border-l border-border bg-[#080810] flex flex-col relative overflow-hidden"
-        >
+        <>
+          {/* Mobile backdrop */}
+          {isMobile && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsInspectorOpen(false)}
+              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            />
+          )}
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: inspectorWidth, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className={cn(
+              "h-full flex-shrink-0 border-l border-border bg-[#080810] flex flex-col relative overflow-hidden",
+              isMobile && "fixed right-0 top-0 bottom-0 z-50 border-l-0 border-r"
+            )}
+          >
           <div className="scanlines absolute inset-0 pointer-events-none opacity-20" />
 
           {/* Header */}
@@ -242,6 +259,15 @@ export function ProtocolInspector() {
               >
                 <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 sm:h-9 w-8 sm:w-9 text-muted-foreground hover:text-foreground transition-colors touch-target md:hidden"
+                onClick={() => setIsInspectorOpen(false)}
+                title="Close inspector"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </Button>
             </div>
           </div>
 
@@ -265,6 +291,7 @@ export function ProtocolInspector() {
           {/* Bottom fade overlay hint */}
           <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#080810] to-transparent pointer-events-none z-20" />
         </motion.div>
+        </>
       )}
     </AnimatePresence>
   );

@@ -37,7 +37,7 @@ export default function ChatApp() {
       </div>
 
       {/* Desktop Inspector - hidden on mobile/tablet, drawer controlled via MessageArea */}
-      <div className="hidden lg:block lg:flex-shrink-0 border-l border-border/50">
+      <div className="lg:block lg:flex-shrink-0 border-l border-border/50">
         <ProtocolInspector />
       </div>
     </div>

@@ -24,7 +24,7 @@ export function MobileNav() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0 border-r border-border">
-        <SheetHeader className="hidden" />
+        <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
         {/* Pass flag to sidebar so it doesn't show brand header in drawer */}
         <div className="h-full">
           <Sidebar isMobileDrawer onNavigate={() => setOpen(false)} />
