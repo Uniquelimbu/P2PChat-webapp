@@ -4,7 +4,7 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "node -e \"if(!process.env.npm_config_user_agent.startsWith('pnpm')){console.error('Use pnpm instead');process.exit(1)}\"",
-    "dev:all": "dotenv -e .env -- concurrently -k -n api,web -c blue,green \"cross-env PORT=8080 pnpm --filter @workspace/api-server run dev\" \"cross-env PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev\"",
+    "dev:all": "pnpm exec kill-port 5173 8080 && dotenv -e .env -- concurrently -k -n api,web -c blue,green \"cross-env PORT=8080 pnpm --filter @workspace/api-server run dev\" \"cross-env PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev\"",
     "share:ngrok": "ngrok http 5173",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
@@ -17,6 +17,7 @@
     "concurrently": "^9.2.1",
     "cross-env": "^10.0.0",
     "dotenv-cli": "^10.0.0",
+    "kill-port": "^2.0.1",
     "lightningcss-win32-x64-msvc": "^1.32.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
