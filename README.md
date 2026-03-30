@@ -41,10 +41,25 @@ No database. No REST message history.
 
 ## Quick Start
 
+### Anywhere Share In 2 Commands
+
+```bash
+pnpm run dev:all
+pnpm run share:ngrok
+```
+
+Share the ngrok frontend URL with peers.
+
 ### 1) Install dependencies
 
 ```bash
 pnpm install
+```
+
+Optional: create your local env file from template:
+
+```bash
+Copy-Item .env.example .env
 ```
 
 ### 2) Run both services (from repository root)
@@ -80,9 +95,12 @@ If you run this command from `C:\projects` (parent folder), pnpm will fail becau
 pnpm run share:ngrok
 ```
 
-This tunnels both ports:
-- `5173` frontend
-- `8080` signaling server
+This creates one public tunnel to the frontend (`5173`).
+Share that single URL with peers.
+
+Why one link works:
+- browser uses `<frontend-url>/ws` for signaling
+- frontend dev server proxies `/ws` to local signaling server (`8080`)
 
 ## Signaling URL Override (Optional)
 
@@ -97,12 +115,47 @@ For split-host deployments (frontend and signaling on different hosts), set:
 VITE_SIGNALING_WS_URL=wss://your-signaling-host/ws
 ```
 
+## Cross-WiFi Reliability (TURN Required)
+
+If peers are on different WiFi networks, direct P2P can fail on strict NATs.
+For reliable cross-network chat, configure TURN.
+
+Default behavior in this project now includes a public TURN fallback for demo use,
+so the 2-command flow works in more networks out of the box.
+For production/reliable long-term use, set your own TURN credentials.
+
+Add these to `.env` (or your shell env):
+
+```bash
+VITE_TURN_URLS=turn:your-turn-host:3478?transport=udp,turn:your-turn-host:443?transport=tcp
+VITE_TURN_USERNAME=your-turn-username
+VITE_TURN_CREDENTIAL=your-turn-password
+```
+
+Optional (forces relay-only mode for maximum compatibility):
+
+```bash
+VITE_ICE_TRANSPORT_POLICY=relay
+```
+
+Optional (disable built-in public TURN fallback):
+
+```bash
+VITE_DISABLE_PUBLIC_TURN=true
+```
+
+Alternative advanced option:
+
+```bash
+VITE_ICE_SERVERS=[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:your-turn-host:3478"],"username":"u","credential":"p"}]
+```
+
 ## Scripts
 
 | Command | Description |
 |---|---|
 | `pnpm run dev:all` | Run signaling server + frontend |
-| `pnpm run share:ngrok` | Tunnel frontend and signaling ports |
+| `pnpm run share:ngrok` | Tunnel frontend (`5173`) and share one public URL |
 | `pnpm run typecheck` | Type-check workspace |
 | `pnpm run build` | Type-check then build packages |
 | `pnpm --filter @workspace/api-server run dev` | Run signaling server only |
@@ -151,7 +204,8 @@ scripts/
 
 - Verify WebRTC connection state in Protocol Inspector.
 - Ensure both peers are in the same room.
-- On restrictive networks, ICE may fail without TURN.
+- On different WiFi networks, configure TURN (`VITE_TURN_*`).
+- For strict NATs, set `VITE_ICE_TRANSPORT_POLICY=relay`.
 
 ### Port already in use
 

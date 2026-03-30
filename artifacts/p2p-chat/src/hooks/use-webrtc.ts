@@ -22,10 +22,91 @@ interface PeerConnection {
   isInitiator: boolean;
 }
 
-const STUN_SERVERS = [
+const DEFAULT_STUN_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.l.google.com:19302"] },
   { urls: ["stun:stun1.l.google.com:19302"] },
 ];
+
+// Public fallback relay for demo reliability across different WiFi/NAT.
+// For production, prefer private TURN via VITE_TURN_* or VITE_ICE_SERVERS.
+const DEFAULT_PUBLIC_TURN_SERVERS: RTCIceServer[] = [
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
+function toUrlList(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function parseIceServersFromJson(raw?: string): RTCIceServer[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+
+    const normalized = parsed.filter(
+      (item): item is RTCIceServer =>
+        Boolean(item) && typeof item === "object" && "urls" in item,
+    );
+
+    return normalized.length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildIceServers(): RTCIceServer[] {
+  const fromJson = parseIceServersFromJson(import.meta.env.VITE_ICE_SERVERS);
+  if (fromJson) return fromJson;
+
+  const stunUrls = toUrlList(import.meta.env.VITE_STUN_URLS);
+  const turnUrls = toUrlList(import.meta.env.VITE_TURN_URLS);
+  const singleTurnUrl = import.meta.env.VITE_TURN_URL?.trim();
+  if (singleTurnUrl) {
+    turnUrls.push(singleTurnUrl);
+  }
+
+  const turnUsername = import.meta.env.VITE_TURN_USERNAME?.trim();
+  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL?.trim();
+  const disablePublicTurn =
+    String(import.meta.env.VITE_DISABLE_PUBLIC_TURN || "").toLowerCase() === "true";
+
+  const servers: RTCIceServer[] =
+    stunUrls.length > 0 ? [{ urls: stunUrls }] : [...DEFAULT_STUN_SERVERS];
+
+  if (turnUrls.length > 0 && turnUsername && turnCredential) {
+    servers.push({
+      urls: turnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  } else if (!disablePublicTurn) {
+    servers.push(...DEFAULT_PUBLIC_TURN_SERVERS);
+  }
+
+  return servers;
+}
+
+function getIceTransportPolicy(): RTCIceTransportPolicy {
+  const policy = (import.meta.env.VITE_ICE_TRANSPORT_POLICY || "all")
+    .toLowerCase()
+    .trim();
+  return policy === "relay" ? "relay" : "all";
+}
+
+const ICE_SERVERS = buildIceServers();
+const ICE_TRANSPORT_POLICY = getIceTransportPolicy();
 
 export function useWebRTC(signalingWs: WebSocket | null, myPeerId: string | null) {
   const { activeRoom, addLog, addMessage, addDmMessage, username } = useApp();
@@ -46,7 +127,8 @@ export function useWebRTC(signalingWs: WebSocket | null, myPeerId: string | null
       if (!myPeerId) return null;
 
       const pc = new RTCPeerConnection({
-        iceServers: STUN_SERVERS,
+        iceServers: ICE_SERVERS,
+        iceTransportPolicy: ICE_TRANSPORT_POLICY,
       });
 
       addLog({
@@ -59,6 +141,8 @@ export function useWebRTC(signalingWs: WebSocket | null, myPeerId: string | null
           peerId,
           peerName,
           isInitiator,
+          iceServers: ICE_SERVERS.length,
+          iceTransportPolicy: ICE_TRANSPORT_POLICY,
         },
       });
 
@@ -100,6 +184,23 @@ export function useWebRTC(signalingWs: WebSocket | null, myPeerId: string | null
 
         if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
           peerConnectionsRef.current.delete(peerId);
+        }
+
+        if (pc.connectionState === "failed") {
+          addLog({
+            event: "ERROR",
+            protocol: "WebRTC",
+            frameType: "CONNECTION_FAILED",
+            payloadSize: 0,
+            data: {
+              peerId,
+              peerName,
+              hint:
+                ICE_TRANSPORT_POLICY === "relay"
+                  ? "Connection failed even in relay mode. Verify TURN credentials/server reachability."
+                  : "Cross-network peers can fail without TURN. Configure VITE_TURN_* or VITE_ICE_SERVERS.",
+            },
+          });
         }
       };
 

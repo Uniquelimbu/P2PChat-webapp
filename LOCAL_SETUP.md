@@ -28,11 +28,25 @@ From workspace root:
 pnpm install
 ```
 
+Optional: create a local env file from template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
 ## Run Everything
 
 ```bash
 pnpm run dev:all
 ```
+
+For public sharing (same 2-step flow):
+
+```bash
+pnpm run share:ngrok
+```
+
+Share the single ngrok frontend URL with peers.
 
 This runs:
 - backend signaling server on `http://localhost:8080`
@@ -97,9 +111,10 @@ http://<host-ip>:5173
 pnpm run share:ngrok
 ```
 
-Configured to tunnel:
-- `8080` signaling
-- `5173` frontend
+This creates one public tunnel to frontend `5173`.
+Share that frontend URL with peers.
+
+`/ws` signaling still works because the frontend server proxies `/ws` to local `8080`.
 
 ## Environment Variables
 
@@ -110,6 +125,26 @@ Required for frontend process:
 Required for backend process:
 - `PORT` (typically `8080`)
 
+Optional for cross-network reliability (different WiFi / strict NAT):
+- `VITE_TURN_URLS` (comma-separated TURN URLs)
+- `VITE_TURN_USERNAME`
+- `VITE_TURN_CREDENTIAL`
+- `VITE_ICE_TRANSPORT_POLICY` (`relay` to force TURN)
+- `VITE_ICE_SERVERS` (advanced JSON override for full ICE config)
+- `VITE_DISABLE_PUBLIC_TURN` (`true` to disable demo fallback TURN)
+
+Note: this project includes a public TURN fallback by default for demo convenience.
+For stable production usage, configure your own TURN server values above.
+
+Example:
+
+```bash
+VITE_TURN_URLS=turn:your-turn-host:3478?transport=udp,turn:your-turn-host:443?transport=tcp
+VITE_TURN_USERNAME=your-turn-username
+VITE_TURN_CREDENTIAL=your-turn-password
+VITE_ICE_TRANSPORT_POLICY=relay
+```
+
 No `DATABASE_URL` is required.
 
 ## Troubleshooting
@@ -119,6 +154,7 @@ No `DATABASE_URL` is required.
 - ensure both peers are in same room
 - check browser console for ICE/WebRTC errors
 - verify signaling server is reachable at `/ws`
+- for different WiFi networks, configure TURN variables above
 
 ### Cannot open from another device on LAN
 
