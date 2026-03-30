@@ -1,71 +1,56 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useApp } from "@/context/app-context";
-import type { DmMessage } from "@/context/app-context";
-import { v4 as uuidv4 } from "uuid";
+import { useWebRTC } from "./use-webrtc";
+
+/**
+ * USE WEBSOCKET — SIGNALING ONLY
+ * 
+ * This hook manages the WebSocket connection to the signaling server.
+ * Messages are NOT relayed through this WebSocket — it's only for:
+ * - Peer handshake and discovery
+ * - SDP offer/answer relay
+ * - ICE candidate relay
+ * 
+ * All actual chat messages go via WebRTC data channels (P2P direct).
+ */
 
 type ConnectionStatus = "CONNECTING" | "OPEN" | "CLOSED" | "ERROR";
 
-function resolveFrameType(data: Record<string, unknown>): string {
-  if (data.frameType) return String(data.frameType);
-  switch (data.type) {
-    case "join":
-    case "joined":
-    case "peers":
-    case "system":
-    case "dm_error":
-      return "CTRL";
-    case "chat":
-      return "DATA";
-    case "dm":
-      return "DM";
-    default:
-      return "TEXT";
-  }
-}
-
 export function useWebSocket() {
-  const { username, userId, activeRoom, activeDm, addLog, addMessage, addDmMessage, setPeers, setMyClientId } =
-    useApp();
+  const { username, activeRoom, addLog, setPeers, setMyClientId, setActiveRoomMessages } = useApp();
   const [status, setStatus] = useState<ConnectionStatus>("CLOSED");
-  const [dmError, setDmError] = useState<string | null>(null);
+  const [myPeerId, setMyPeerId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const clientIdRef = useRef<string | null>(null);
+  const myPeerIdRef = useRef<string | null>(null);
+  const connectedPeersRef = useRef<Set<string>>(new Set());
+  const shouldReconnectRef = useRef(true);
 
-  // Stable refs — callbacks and values the WebSocket handlers need without triggering reconnects
+  // Stable refs
   const addLogRef = useRef(addLog);
-  const addMessageRef = useRef(addMessage);
-  const addDmMessageRef = useRef(addDmMessage);
   const setPeersRef = useRef(setPeers);
   const setMyClientIdRef = useRef(setMyClientId);
+  const setActiveRoomMessagesRef = useRef(setActiveRoomMessages);
   const activeRoomRef = useRef(activeRoom);
-  const activeDmRef = useRef(activeDm);
   const usernameRef = useRef(username);
-  const userIdRef = useRef(userId);
 
   useEffect(() => { addLogRef.current = addLog; }, [addLog]);
-  useEffect(() => { addMessageRef.current = addMessage; }, [addMessage]);
-  useEffect(() => { addDmMessageRef.current = addDmMessage; }, [addDmMessage]);
   useEffect(() => { setPeersRef.current = setPeers; }, [setPeers]);
   useEffect(() => { setMyClientIdRef.current = setMyClientId; }, [setMyClientId]);
+  useEffect(() => { setActiveRoomMessagesRef.current = setActiveRoomMessages; }, [setActiveRoomMessages]);
   useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
-  useEffect(() => { activeDmRef.current = activeDm; }, [activeDm]);
   useEffect(() => { usernameRef.current = username; }, [username]);
-  useEffect(() => { userIdRef.current = userId; }, [userId]);
 
-  const sendRaw = useCallback((dataStr: string, frameType?: string) => {
+  // Initialize WebRTC
+  const webrtc = useWebRTC(wsRef.current, myPeerId);
+  const webrtcRef = useRef(webrtc);
+  useEffect(() => {
+    webrtcRef.current = webrtc;
+  }, [webrtc]);
+
+  const sendSignaling = useCallback((data: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const parsed = JSON.parse(dataStr) as Record<string, unknown>;
-      const payloadSize = new Blob([dataStr]).size;
-      addLogRef.current({
-        event: "SENT",
-        protocol: "WebSocket",
-        frameType: frameType ?? resolveFrameType(parsed),
-        direction: "UP",
-        payloadSize,
-        data: parsed,
-      });
-      wsRef.current.send(dataStr);
+      wsRef.current.send(JSON.stringify(data));
     }
   }, []);
 
@@ -79,7 +64,9 @@ export function useWebSocket() {
 
     setStatus("CONNECTING");
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl =
+      import.meta.env.VITE_SIGNALING_WS_URL ||
+      `${protocol}//${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -92,52 +79,101 @@ export function useWebSocket() {
         payloadSize: 0,
         data: {
           url: wsUrl,
-          status: "HTTP Upgrade → WebSocket handshake complete",
+          status: "HTTP Upgrade → WebSocket handshake complete (Signaling Only)",
           headers: ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Version: 13"],
         },
       });
-      // BUG FIX: do NOT send join here — the useEffect below handles it.
-      // Sending it here AND in the effect caused a double join on every (re)connect.
     };
 
     ws.onmessage = (event) => {
       const payloadSize = new Blob([event.data]).size;
       try {
-        const data = JSON.parse(event.data) as Record<string, unknown>;
-        const frameType = resolveFrameType(data);
+        const data = JSON.parse(event.data) as Record<string, any>;
 
         addLogRef.current({
           event: "RECEIVED",
           protocol: "WebSocket",
-          frameType,
+          frameType: data.frameType || "CTRL",
           direction: "DOWN",
           payloadSize,
           data,
         });
 
         if (data.type === "joined") {
-          clientIdRef.current = data.clientId as string;
-          setMyClientIdRef.current(data.clientId as string);
-        } else if (data.type === "dm_error") {
-          setDmError((data.detail as string) || "Peer is no longer connected");
-        } else if (data.type === "chat") {
-          const room = activeRoomRef.current;
-          if (room && data.roomId === room.id) {
-            addMessageRef.current(data as unknown as Parameters<typeof addMessageRef.current>[0]);
-          }
+          // Server confirmed our join
+          myPeerIdRef.current = data.peerId as string;
+          setMyPeerId(data.peerId as string);
+          setMyClientIdRef.current(data.peerId as string);
         } else if (data.type === "peers") {
-          setPeersRef.current((data.peers || []) as Parameters<typeof setPeersRef.current>[0]);
-        } else if (data.type === "dm") {
-          const dm = data as unknown as DmMessage;
-          const peerId = dm.direction === "SENT" ? dm.targetId : dm.senderId;
-          const isActive = activeDmRef.current?.id === peerId;
-          addDmMessageRef.current(peerId, dm, isActive);
+          // Updated peer list from server
+          setPeersRef.current((data.peers || []) as any[]);
+
+          // Check for new peers and initiate connections
+          const newPeers = (data.peers || []) as any[];
+          const visiblePeerIds = new Set(
+            newPeers
+              .filter((peer) => peer.id !== myPeerIdRef.current)
+              .map((peer) => peer.id as string)
+          );
+
+          // Drop stale peer connections that are no longer present in this room view
+          for (const conn of webrtcRef.current.getPeerConnections()) {
+            if (!visiblePeerIds.has(conn.peerId)) {
+              webrtcRef.current.disconnectFromPeer(conn.peerId);
+            }
+          }
+
+          // Keep connection tracker aligned with the latest room peer list
+          connectedPeersRef.current = new Set(
+            Array.from(connectedPeersRef.current).filter((id) => visiblePeerIds.has(id))
+          );
+
+          const roomId = activeRoomRef.current?.id;
+
+          for (const peer of newPeers) {
+            if (
+              peer.id !== myPeerIdRef.current &&
+              roomId === activeRoomRef.current?.id &&
+              !connectedPeersRef.current.has(peer.id)
+            ) {
+              // We initiate connection (simple: first peer alphabetically is initiator)
+              const shouldInitiate = (myPeerIdRef.current || "") < peer.id;
+              if (shouldInitiate) {
+                connectedPeersRef.current.add(peer.id);
+                setTimeout(() => {
+                  webrtcRef.current.connectToPeer(peer.id, peer.name, peer.ip);
+                }, 100);
+              }
+            }
+          }
+        } else if (data.type === "signal:offer") {
+          // Incoming SDP offer from another peer
+          webrtcRef.current.handleSignalingOffer(
+            data.offer as RTCSessionDescriptionInit,
+            data.fromPeerId as string,
+            data.fromName as string,
+            data.fromIp as string
+          );
+          connectedPeersRef.current.add(data.fromPeerId as string);
+        } else if (data.type === "signal:answer") {
+          // Incoming SDP answer from another peer
+          webrtcRef.current.handleSignalingAnswer(
+            data.answer as RTCSessionDescriptionInit,
+            data.fromPeerId as string,
+            data.fromName as string
+          );
+        } else if (data.type === "signal:ice-candidate") {
+          // Incoming ICE candidate from another peer
+          webrtcRef.current.handleIceCandidate(
+            data.candidate as RTCIceCandidate,
+            data.fromPeerId as string
+          );
         }
-      } catch {
+      } catch (err) {
         addLogRef.current({
           event: "RECEIVED",
           protocol: "WebSocket",
-          frameType: typeof event.data === "string" ? "TEXT" : "BINARY",
+          frameType: "TEXT",
           direction: "DOWN",
           payloadSize,
           data: event.data,
@@ -154,9 +190,10 @@ export function useWebSocket() {
         payloadSize: 0,
         data: { code: event.code, reason: event.reason || "Connection closed" },
       });
-      // BUG FIX: clear any existing reconnect timer before scheduling a new one
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = setTimeout(() => connect(), 3000);
+      if (shouldReconnectRef.current) {
+        reconnectTimeoutRef.current = setTimeout(() => connect(), 3000);
+      }
     };
 
     ws.onerror = () => {
@@ -168,61 +205,50 @@ export function useWebSocket() {
         data: "WebSocket connection error",
       });
     };
-  }, [sendRaw]);
+  }, []);
 
   useEffect(() => {
+    shouldReconnectRef.current = true;
     connect();
     return () => {
+      shouldReconnectRef.current = false;
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      webrtcRef.current.disconnectAllPeers();
       wsRef.current?.close(1000, "Component unmounted");
     };
   }, [connect]);
 
-  // Send join whenever room changes OR when the connection first becomes OPEN
+  // Send join whenever room changes OR when connection is OPEN
   useEffect(() => {
     if (status === "OPEN" && activeRoom && username) {
-      const joinMsg = { type: "join", roomId: activeRoom.id, name: username, userId };
-      sendRaw(JSON.stringify(joinMsg), "CTRL");
+      // Room switch should always start a fresh mesh for room-scoped P2P channels.
+      webrtcRef.current.disconnectAllPeers();
+      setPeersRef.current([]);
+      setActiveRoomMessagesRef.current([]);
+      connectedPeersRef.current.clear();
+
+      const joinMsg = { type: "join", roomId: activeRoom.id, name: username };
+      sendSignaling(joinMsg);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRoom?.id, status]);
+  }, [activeRoom?.id, status, username, sendSignaling]);
 
-  const sendMessage = useCallback(
-    (content: string) => {
-      const room = activeRoomRef.current;
-      if (!room) return;
-      sendRaw(
-        JSON.stringify({
-          type: "message",
-          id: uuidv4(),
-          roomId: room.id,
-          senderId: userIdRef.current,
-          senderName: usernameRef.current,
-          content,
-          timestamp: new Date().toISOString(),
-        }),
-        "DATA"
-      );
-    },
-    [sendRaw]
-  );
+  // Clear connected peers when room changes
+  useEffect(() => {
+    connectedPeersRef.current.clear();
+  }, [activeRoom?.id]);
 
-  const sendDm = useCallback(
-    (targetId: string, content: string) => {
-      sendRaw(
-        JSON.stringify({
-          type: "dm",
-          targetId,
-          content,
-          timestamp: new Date().toISOString(),
-        }),
-        "DM"
-      );
-    },
-    [sendRaw]
-  );
+  const sendMessage = useCallback((content: string) => {
+    webrtc.sendGroupMessage(content);
+  }, [webrtc]);
 
-  const clearDmError = useCallback(() => setDmError(null), []);
+  const sendDm = useCallback((targetPeerId: string, content: string) => {
+    webrtc.sendDirectMessage(targetPeerId, content);
+  }, [webrtc]);
 
-  return { status, sendMessage, sendDm, myClientId: clientIdRef.current, dmError, clearDmError };
+  return {
+    status,
+    sendMessage,
+    sendDm,
+    myClientId: myPeerId,
+  };
 }

@@ -1,12 +1,23 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
 import { Server } from "http";
-import { db } from "@workspace/db";
-import { messagesTable } from "@workspace/db/schema";
 import { randomUUID } from "crypto";
 import { logger } from "./logger";
 
-interface ConnectedClient {
+/**
+ * TRUE P2P SIGNALING SERVER
+ * 
+ * This server orchestrates peer discovery and connection setup.
+ * All messaging happens directly between peers via WebRTC data channels.
+ * The server only handles:
+ * - Peer registration and discovery (for initial connection setup)
+ * - SDP offer/answer relaying
+ * - ICE candidate relaying
+ * - NO message persistence
+ * - NO message relaying (peers communicate directly)
+ */
+
+interface SignalingPeer {
   ws: WebSocket;
   id: string;
   name: string;
@@ -15,51 +26,52 @@ interface ConnectedClient {
   connectedAt: string;
 }
 
-const clients = new Map<string, ConnectedClient>();
+const peers = new Map<string, SignalingPeer>();
 
-function broadcast(roomId: string, data: object, excludeId?: string) {
-  const json = JSON.stringify(data);
-  for (const [id, client] of clients.entries()) {
-    if (client.roomId === roomId && id !== excludeId) {
-      if (client.ws.readyState === WebSocket.OPEN) {
-        client.ws.send(json);
-      }
-    }
+/**
+ * Send a message to a specific peer
+ */
+function sendToPeer(peerId: string, data: object) {
+  const peer = peers.get(peerId);
+  if (peer?.ws.readyState === WebSocket.OPEN) {
+    peer.ws.send(JSON.stringify(data));
   }
 }
 
-function broadcastPeers(roomId: string) {
-  const peers = Array.from(clients.values())
-    .filter((c) => c.roomId === roomId)
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      ip: c.ip,
-      connectedAt: c.connectedAt,
-      roomId: c.roomId,
+/**
+ * Broadcast peer list update to all peers in a room
+ */
+function broadcastPeerListInRoom(roomId: string) {
+  const roomPeers = Array.from(peers.values())
+    .filter((p) => p.roomId === roomId)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      ip: p.ip,
+      connectedAt: p.connectedAt,
     }));
 
-  for (const client of clients.values()) {
-    if (client.roomId === roomId && client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(JSON.stringify({ type: "peers", peers }));
+  for (const peer of peers.values()) {
+    if (peer.roomId === roomId && peer.ws.readyState === WebSocket.OPEN) {
+      peer.ws.send(JSON.stringify({ type: "peers", peers: roomPeers }));
     }
   }
 }
 
 export function getPeers() {
-  return Array.from(clients.values()).map((c) => ({
-    id: c.id,
-    name: c.name,
-    ip: c.ip,
-    connectedAt: c.connectedAt,
-    roomId: c.roomId,
+  return Array.from(peers.values()).map((p) => ({
+    id: p.id,
+    name: p.name,
+    ip: p.ip,
+    connectedAt: p.connectedAt,
+    roomId: p.roomId,
   }));
 }
 
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
-  logger.info("WebSocket server initialized on /ws");
+  logger.info("WebSocket server initialized on /ws (signaling only)");
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     const clientIp =
@@ -67,10 +79,10 @@ export function setupWebSocket(server: Server) {
       req.socket.remoteAddress ||
       "unknown";
 
-    const clientId = randomUUID();
-    let client: ConnectedClient | null = null;
+    const peerId = randomUUID();
+    let signalingPeer: SignalingPeer | null = null;
 
-    logger.info({ clientId, clientIp }, "WebSocket client connected");
+    logger.info({ peerId, clientIp }, "Signaling peer connected");
 
     ws.send(
       JSON.stringify({
@@ -82,180 +94,114 @@ export function setupWebSocket(server: Server) {
       })
     );
 
-    ws.on("message", async (rawData) => {
-      let msg: {
-        type: string;
-        roomId?: string;
-        name?: string;
-        content?: string;
-        targetId?: string;
-      };
+    ws.on("message", (rawData) => {
+      let msg: Record<string, any>;
 
       try {
         msg = JSON.parse(rawData.toString());
       } catch {
-        logger.warn({ clientId }, "Invalid JSON from client");
+        logger.warn({ peerId }, "Invalid JSON from client");
         return;
       }
 
-      // ── JOIN ROOM ──────────────────────────────────────────────
+      // ── JOIN ROOM (peer discovery) ──────────────────────────
       if (msg.type === "join" && msg.roomId && msg.name) {
-        const oldRoomId = client?.roomId ?? null;
-        // Preserve the original connection time across room switches
-        const connectedAt = client?.connectedAt ?? new Date().toISOString();
+        const oldRoomId = signalingPeer?.roomId;
+        const connectedAt = signalingPeer?.connectedAt ?? new Date().toISOString();
 
-        client = {
+        signalingPeer = {
           ws,
-          id: clientId,
+          id: peerId,
           name: msg.name,
           ip: clientIp,
           roomId: msg.roomId,
           connectedAt,
         };
-        clients.set(clientId, client);
+        peers.set(peerId, signalingPeer);
 
-        // BUG FIX: notify the old room that this peer departed
+        logger.info({ peerId, roomId: msg.roomId, name: msg.name }, "Peer joined room");
+
+        // Notify old room
         if (oldRoomId && oldRoomId !== msg.roomId) {
-          broadcastPeers(oldRoomId);
-          broadcast(oldRoomId, {
-            type: "system",
-            event: "PEER_LEFT",
-            frameType: "CTRL",
-            detail: `${msg.name} (${clientIp}) switched to another room`,
-            timestamp: new Date().toISOString(),
-          });
+          broadcastPeerListInRoom(oldRoomId);
         }
 
+        // Send confirmation + full peer list
         ws.send(
           JSON.stringify({
             type: "joined",
             frameType: "CTRL",
-            clientId,
+            peerId,
             ip: clientIp,
             roomId: msg.roomId,
           })
         );
 
-        broadcastPeers(msg.roomId);
+        // Broadcast updated peer list
+        broadcastPeerListInRoom(msg.roomId);
 
-        broadcast(
-          msg.roomId,
-          {
-            type: "system",
-            event: "PEER_JOINED",
-            frameType: "CTRL",
-            detail: `${msg.name} (${clientIp}) joined the room`,
-            timestamp: new Date().toISOString(),
-          },
-          clientId
+      // ── SDP OFFER (relay to target peer) ────────────────────
+      } else if (msg.type === "signal:offer" && msg.targetPeerId && msg.offer && signalingPeer) {
+        const targetPeerId = msg.targetPeerId;
+        logger.info(
+          { from: peerId, to: targetPeerId, roomId: signalingPeer.roomId },
+          "Relaying SDP offer"
         );
 
-      // ── ROOM MESSAGE ───────────────────────────────────────────
-      } else if (msg.type === "message" && msg.roomId && msg.content && client) {
-        const payload = rawData.toString();
-        const payloadSize = Buffer.byteLength(payload, "utf8");
-        const messageId = randomUUID();
-        const timestamp = new Date().toISOString();
+        sendToPeer(targetPeerId, {
+          type: "signal:offer",
+          fromPeerId: peerId,
+          fromName: signalingPeer.name,
+          fromIp: clientIp,
+          offer: msg.offer,
+          timestamp: new Date().toISOString(),
+        });
 
-        const chatMessage = {
-          type: "chat",
-          id: messageId,
-          roomId: msg.roomId,
-          senderId: clientId,
-          senderName: client.name,
-          senderIp: clientIp,
-          content: msg.content,
-          timestamp,
-          protocol: "WebSocket",
-          frameType: "DATA",
-          payloadSize,
-        };
+      // ── SDP ANSWER (relay to target peer) ───────────────────
+      } else if (msg.type === "signal:answer" && msg.targetPeerId && msg.answer && signalingPeer) {
+        const targetPeerId = msg.targetPeerId;
+        logger.info(
+          { from: peerId, to: targetPeerId, roomId: signalingPeer.roomId },
+          "Relaying SDP answer"
+        );
 
-        broadcast(msg.roomId, { ...chatMessage, direction: "RECEIVED" });
-        ws.send(JSON.stringify({ ...chatMessage, direction: "SENT" }));
+        sendToPeer(targetPeerId, {
+          type: "signal:answer",
+          fromPeerId: peerId,
+          fromName: signalingPeer.name,
+          answer: msg.answer,
+          timestamp: new Date().toISOString(),
+        });
 
-        try {
-          await db.insert(messagesTable).values({
-            id: messageId,
-            roomId: msg.roomId,
-            senderId: clientId,
-            senderName: client.name,
-            senderIp: clientIp,
-            content: msg.content,
-            protocol: "WebSocket",
-            frameType: "DATA",
-            payloadSize,
-            direction: "RECEIVED",
-          });
-        } catch (err) {
-          logger.error({ err }, "Failed to persist message");
-        }
+      // ── ICE CANDIDATE (relay to target peer) ────────────────
+      } else if (msg.type === "signal:ice-candidate" && msg.targetPeerId && msg.candidate && signalingPeer) {
+        const targetPeerId = msg.targetPeerId;
+        logger.debug(
+          { from: peerId, to: targetPeerId },
+          "Relaying ICE candidate"
+        );
 
-      // ── DIRECT MESSAGE ─────────────────────────────────────────
-      } else if (msg.type === "dm" && msg.targetId && msg.content && client) {
-        const target = clients.get(msg.targetId);
-        if (!target) {
-          ws.send(
-            JSON.stringify({
-              type: "dm_error",
-              frameType: "CTRL",
-              detail: `Peer ${msg.targetId} is not connected`,
-              timestamp: new Date().toISOString(),
-            })
-          );
-          return;
-        }
-
-        const payload = rawData.toString();
-        const payloadSize = Buffer.byteLength(payload, "utf8");
-        const messageId = randomUUID();
-        const timestamp = new Date().toISOString();
-
-        const dmPayload = {
-          type: "dm",
-          id: messageId,
-          senderId: clientId,
-          senderName: client.name,
-          senderIp: clientIp,
-          targetId: msg.targetId,
-          targetName: target.name,
-          content: msg.content,
-          timestamp,
-          protocol: "WebSocket",
-          frameType: "DM",
-          payloadSize,
-        };
-
-        target.ws.send(JSON.stringify({ ...dmPayload, direction: "RECEIVED" }));
-        ws.send(JSON.stringify({ ...dmPayload, direction: "SENT" }));
-
-        logger.info({ from: client.name, to: target.name }, "DM delivered");
+        sendToPeer(targetPeerId, {
+          type: "signal:ice-candidate",
+          fromPeerId: peerId,
+          candidate: msg.candidate,
+          timestamp: new Date().toISOString(),
+        });
       }
     });
 
     ws.on("close", () => {
-      if (client) {
-        const roomId = client.roomId;
-        const name = client.name;
-        clients.delete(clientId);
-        broadcastPeers(roomId);
-        broadcast(roomId, {
-          type: "system",
-          event: "PEER_LEFT",
-          frameType: "CTRL",
-          detail: `${name} (${clientIp}) disconnected`,
-          timestamp: new Date().toISOString(),
-        });
-        logger.info({ clientId, name }, "WebSocket client disconnected");
+      if (signalingPeer) {
+        const roomId = signalingPeer.roomId;
+        const name = signalingPeer.name;
+        peers.delete(peerId);
+        broadcastPeerListInRoom(roomId);
+        logger.info({ peerId, name }, "Signaling peer disconnected");
       }
     });
 
-    ws.on("ping", () => {
-      logger.debug({ clientId }, "WebSocket ping received");
-    });
-
     ws.on("error", (err) => {
-      logger.error({ clientId, err }, "WebSocket error");
+      logger.error({ peerId, err }, "WebSocket error");
     });
   });
 

@@ -5,7 +5,7 @@
   "scripts": {
     "preinstall": "node -e \"if(!process.env.npm_config_user_agent.startsWith('pnpm')){console.error('Use pnpm instead');process.exit(1)}\"",
     "dev:all": "dotenv -e .env -- concurrently -k -n api,web -c blue,green \"cross-env PORT=8080 pnpm --filter @workspace/api-server run dev\" \"cross-env PORT=5173 BASE_PATH=/ pnpm --filter @workspace/p2p-chat run dev\"",
-    "share:ngrok": "node -e \"const {execSync} = require('child_process'); const path = 'C:\\\\Users\\\\atama\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Packages\\\\Ngrok.Ngrok_Microsoft.Winget.Source_8wekyb3d8bbwe\\\\ngrok.exe'; execSync(path + ' http 5173', {stdio: 'inherit'});\"",
+    "share:ngrok": "ngrok http 8080 http 5173",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"

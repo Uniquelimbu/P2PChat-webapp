@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useApp } from "@/context/app-context";
-import { useGetMessages, getGetMessagesQueryKey } from "@workspace/api-client-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Terminal, Send, Server, Network, Lock, ArrowDown, AlertCircle } from "lucide-react";
+import { Terminal, Send, Server, Network, Lock, ArrowDown } from "lucide-react";
 import { format, isToday, isYesterday, isSameDay } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -44,55 +43,20 @@ function Avatar({ name, isMe }: { name: string; isMe: boolean }) {
 
 export function MessageArea() {
   const {
-    activeRoom, activeRoomMessages, setActiveRoomMessages,
+    activeRoom, activeRoomMessages,
     activeDm, dmMessages, clearUnread,
     username, isInspectorOpen, setIsInspectorOpen,
   } = useApp();
-  const { status, sendMessage, sendDm, dmError, clearDmError } = useWebSocket();
+  const { status, sendMessage, sendDm } = useWebSocket();
   const [content, setContent] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  // ── Room: fetch history ───────────────────────────────────────
-  const { data: initialMessages, isFetching } = useGetMessages(
-    activeRoom?.id || "",
-    {},
-    {
-      query: {
-        queryKey: getGetMessagesQueryKey(activeRoom?.id || ""),
-        enabled: !!activeRoom?.id && !activeDm,
-        staleTime: 0,
-      },
-    }
-  );
-
-  const syncedRoomRef = useRef<string | null>(null);
+  // ── Room: clear messages on room switch ────────────────────
   useEffect(() => {
     if (activeDm) return;
-    if (!activeRoom?.id) {
-      setActiveRoomMessages([]);
-      syncedRoomRef.current = null;
-      return;
-    }
-    if (syncedRoomRef.current !== activeRoom.id) {
-      setActiveRoomMessages([]);
-      syncedRoomRef.current = activeRoom.id;
-    }
-    if (!isFetching && initialMessages) {
-      // Merge fetched history with any live messages already in state to avoid
-      // overwriting real-time messages that arrived during the fetch or while in a DM.
-      setActiveRoomMessages((prev) => {
-        if (prev.length === 0) return initialMessages;
-        const fetchedIds = new Set(initialMessages.map((m) => m.id));
-        const liveOnly = prev.filter((m) => !fetchedIds.has(m.id));
-        if (liveOnly.length === 0) return initialMessages;
-        return [...initialMessages, ...liveOnly].sort(
-          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        );
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRoom?.id, isFetching, activeDm]);
+    // Messages are ephemeral; stay in current room until user switches
+  }, [activeDm]);
 
   // Clear unread when DM opened
   useEffect(() => {
@@ -133,7 +97,6 @@ export function MessageArea() {
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || status !== "OPEN") return;
-    clearDmError();
     if (activeDm) sendDm(activeDm.id, content);
     else if (activeRoom) sendMessage(content);
     setContent("");
@@ -265,11 +228,7 @@ export function MessageArea() {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 sm:py-4 flex flex-col scrollbar-custom relative"
       >
-        {!activeDm && isFetching && roomMessages.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center font-mono text-primary/60 text-xs sm:text-sm animate-pulse">
-            LOADING_ARCHIVE...
-          </div>
-        ) : items.length === 0 ? (
+        {items.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground/40 font-mono text-xs sm:text-sm">
             {activeDm ? (
               <>
@@ -354,15 +313,6 @@ export function MessageArea() {
         >
           <ArrowDown className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
-      )}
-
-      {/* DM error banner */}
-      {dmError && (
-        <div className="mx-3 sm:mx-5 mb-0 mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs sm:text-sm font-mono">
-          <AlertCircle className="w-4 h-4 sm:w-4.5 sm:h-4.5 flex-shrink-0" />
-          <span className="flex-1">{dmError}</span>
-          <button onClick={clearDmError} className="text-destructive/60 hover:text-destructive ml-1">✕</button>
-        </div>
       )}
 
       {/* Input */}

@@ -9,6 +9,9 @@ images: []
 
 notes:
   - "The app uses a dark 'hacker/technical' theme with custom neon color variables."
-  - "WebSockets connect to ws:// or wss:// on the current host at /ws."
-  - "React Query hooks are imported from @workspace/api-client-react."
-  - "Local state handles real-time WS chat events, merging with history from REST hooks."
+  - "WebSockets (ws:// or wss://) on the current host at /ws are used for signaling only (peer discovery, SDP/ICE relay)."
+  - "Actual chat messages flow through WebRTC data channels (group-chat, direct-message) for true peer-to-peer communication."
+  - "Messages are ephemeral - stored in-memory only, disappear when browser closes. No server persistence."
+  - "Uses RTCPeerConnection with two data channels per peer: 'group-chat' for room broadcasts, 'direct-message' for 1-on-1 DMs."
+  - "Room and peer management is fully client-side. STUN servers handle connectivity on local networks."
+

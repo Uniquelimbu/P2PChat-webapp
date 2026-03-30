@@ -1,6 +1,37 @@
 import React, { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
-import type { Message, Peer, Room } from "@workspace/api-client-react";
+
+/**
+ * P2P LOCAL TYPES (no longer from server API)
+ * Messages are ephemeral and stored only in memory
+ */
+
+export interface Room {
+  id: string;
+  name: string;
+}
+
+export interface Peer {
+  id: string;
+  name: string;
+  ip: string;
+  connectedAt: string;
+  roomId: string;
+}
+
+export interface RoomMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderName: string;
+  senderIp: string;
+  content: string;
+  timestamp: string;
+  protocol: string;
+  frameType: string;
+  payloadSize: number;
+  direction: "SENT" | "RECEIVED";
+}
 
 export interface ProtocolLog {
   id: string;
@@ -29,15 +60,14 @@ export interface DmMessage {
 interface AppContextType {
   username: string;
   setUsername: (name: string) => void;
-  userId: string;
   myClientId: string | null;
   setMyClientId: (id: string) => void;
 
   activeRoom: Room | null;
   setActiveRoom: (room: Room | null) => void;
-  activeRoomMessages: Message[];
-  setActiveRoomMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  addMessage: (msg: Message) => void;
+  activeRoomMessages: RoomMessage[];
+  setActiveRoomMessages: React.Dispatch<React.SetStateAction<RoomMessage[]>>;
+  addMessage: (msg: RoomMessage) => void;
 
   peers: Peer[];
   setPeers: React.Dispatch<React.SetStateAction<Peer[]>>;
@@ -64,14 +94,6 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [username, setUsernameState] = useState(() => localStorage.getItem("p2p_username") || "");
-  const [userId] = useState(() => {
-    let id = localStorage.getItem("p2p_userid");
-    if (!id) {
-      id = uuidv4();
-      localStorage.setItem("p2p_userid", id);
-    }
-    return id;
-  });
 
   const setUsername = useCallback((name: string) => {
     localStorage.setItem("p2p_username", name);
@@ -81,10 +103,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [myClientId, setMyClientId] = useState<string | null>(null);
 
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
-  const [activeRoomMessages, setActiveRoomMessages] = useState<Message[]>([]);
+  const [activeRoomMessages, setActiveRoomMessages] = useState<RoomMessage[]>([]);
   const [peers, setPeers] = useState<Peer[]>([]);
 
-  const addMessage = useCallback((msg: Message) => {
+  const addMessage = useCallback((msg: RoomMessage) => {
     setActiveRoomMessages((prev) => {
       if (prev.some((m) => m.id === msg.id)) return prev;
       return [...prev, msg].sort(
@@ -145,7 +167,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const contextValue = React.useMemo(
     () => ({
-      username, setUsername, userId,
+      username, setUsername,
       myClientId, setMyClientId,
       activeRoom, setActiveRoom,
       activeRoomMessages, setActiveRoomMessages, addMessage,
@@ -156,7 +178,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isInspectorOpen, setIsInspectorOpen,
     }),
     [
-      username, setUsername, userId,
+      username, setUsername,
       myClientId,
       activeRoom, activeRoomMessages, addMessage,
       peers,

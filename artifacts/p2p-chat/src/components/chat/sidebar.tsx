@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { useGetRooms, useCreateRoom, Room } from "@workspace/api-client-react";
-import { useApp } from "@/context/app-context";
+import { useApp, type Room, type Peer } from "@/context/app-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,9 +9,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Hash, Plus, Users, Activity, TerminalSquare, MessageSquare, Dot } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Hash, Plus, Users, Activity, TerminalSquare, MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export function Sidebar({ isMobileDrawer = false, onNavigate }: { isMobileDrawer?: boolean; onNavigate?: () => void } = {}) {
   const {
@@ -23,27 +22,23 @@ export function Sidebar({ isMobileDrawer = false, onNavigate }: { isMobileDrawer
     dmMessages,
   } = useApp();
 
-  const { data: rooms = [], refetch } = useGetRooms();
-  const createRoomMutation = useCreateRoom();
-
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRoomName.trim()) return;
-    createRoomMutation.mutate(
-      { data: { name: newRoomName } },
-      {
-        onSuccess: (room) => {
-          setIsCreateOpen(false);
-          setNewRoomName("");
-          refetch();
-          setActiveDm(null);
-          setActiveRoom(room);
-        },
-      }
-    );
+    
+    const room: Room = {
+      id: newRoomName.toLowerCase().replace(/\s+/g, "-"),
+      name: newRoomName,
+    };
+    
+    setIsCreateOpen(false);
+    setNewRoomName("");
+    setActiveDm(null);
+    setActiveRoom(room);
+    onNavigate?.();
   };
 
   const openRoom = (room: Room) => {
@@ -52,7 +47,7 @@ export function Sidebar({ isMobileDrawer = false, onNavigate }: { isMobileDrawer
     onNavigate?.();
   };
 
-  const openDm = (peer: (typeof peers)[0]) => {
+  const openDm = (peer: Peer) => {
     setActiveRoom(null);
     setActiveDm(peer);
     clearUnread(peer.id);
@@ -105,38 +100,27 @@ export function Sidebar({ isMobileDrawer = false, onNavigate }: { isMobileDrawer
           </div>
 
           <div className="flex flex-col gap-1">
-            {rooms.length === 0 ? (
-              <p className="text-xs sm:text-sm text-muted-foreground/50 italic font-mono px-2 py-2">
-                No rooms yet.
-              </p>
+            {activeRoom ? (
+              <button
+                onClick={() => openRoom(activeRoom)}
+                className={cn(
+                  "flex items-center gap-2 w-full text-left px-3 sm:px-3 py-2.5 sm:py-3 rounded-md transition-all font-mono text-xs sm:text-sm group touch-target",
+                  "bg-primary/10 text-primary border border-primary/25 shadow-[inset_0_0_8px_hsl(144_100%_50%/0.05)]"
+                )}
+              >
+                <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-primary">#</span>
+                <span className="truncate flex-1">{activeRoom.name}</span>
+                <span className={cn(
+                  "text-[10px] sm:text-xs px-2 py-1 rounded font-bold flex-shrink-0",
+                  "bg-primary/20 text-primary"
+                )}>
+                  {peers.filter(p => p.roomId === activeRoom.id).length}
+                </span>
+              </button>
             ) : (
-              rooms.map((room: Room) => {
-                const isActive = activeRoom?.id === room.id && !activeDm;
-                const peerCount = (room as Room & { peerCount?: number }).peerCount ?? 0;
-                return (
-                  <button
-                    key={room.id}
-                    onClick={() => openRoom(room)}
-                    className={cn(
-                      "flex items-center gap-2 w-full text-left px-3 sm:px-3 py-2.5 sm:py-3 rounded-md transition-all font-mono text-xs sm:text-sm group touch-target",
-                      isActive
-                        ? "bg-primary/10 text-primary border border-primary/25 shadow-[inset_0_0_8px_hsl(144_100%_50%/0.05)]"
-                        : "text-muted-foreground hover:text-foreground hover:bg-white/5 border border-transparent"
-                    )}
-                  >
-                    <span className={cn("flex-shrink-0 w-5 h-5 flex items-center justify-center", isActive ? "text-primary" : "text-muted-foreground/50 group-hover:text-muted-foreground")}>#</span>
-                    <span className="truncate flex-1">{room.name}</span>
-                    {peerCount > 0 && (
-                      <span className={cn(
-                        "text-[10px] sm:text-xs px-2 py-1 rounded font-bold flex-shrink-0",
-                        isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-                      )}>
-                        {peerCount}
-                      </span>
-                    )}
-                  </button>
-                );
-              })
+              <p className="text-xs sm:text-sm text-muted-foreground/50 italic font-mono px-2 py-2">
+                No room joined. Create one to start chatting.
+              </p>
             )}
           </div>
         </div>
@@ -314,12 +298,10 @@ export function Sidebar({ isMobileDrawer = false, onNavigate }: { isMobileDrawer
             <Button
               type="submit"
               form="create-room-form"
-              disabled={createRoomMutation.isPending || newRoomName.length < 1}
+              disabled={newRoomName.length < 1}
               className="h-10 sm:h-11"
-              form="create-room-form"
-              disabled={createRoomMutation.isPending || newRoomName.length < 1}
             >
-              {createRoomMutation.isPending ? "Creating..." : "Create"}
+              Create
             </Button>
           </DialogFooter>
         </DialogContent>

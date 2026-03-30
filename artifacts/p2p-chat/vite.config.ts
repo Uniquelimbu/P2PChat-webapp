@@ -26,6 +26,8 @@ if (!basePath) {
   );
 }
 
+const apiUrl = process.env.API_URL || "http://localhost:8080";
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -49,7 +51,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -64,11 +65,11 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: apiUrl,
         changeOrigin: true,
       },
       "/ws": {
-        target: "ws://localhost:8080",
+        target: apiUrl.replace("http://", "ws://").replace("https://", "wss://"),
         ws: true,
       },
     },
